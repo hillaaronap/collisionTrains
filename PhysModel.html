@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+	<html>
+		<head>
+			<title>COLLISION</title>
+			
+			<script src="./js/THREEx.DomEvents.js"></script>
+			<script src="./js/THREEx.WindowResize.js"></script>
+			<script src="./js/three.min.js"></script>
+			<script src="./js/Projector.js"></script>
+			<script src="./js/dat.gui.min.js"></script>
+			<script src="./js/TrackballControls.js"></script>
+			<script src="./js/CanvasRenderer.js"></script>
+			<script src="./js/Detector.js"></script>
+			<link rel="stylesheet" href="./css/trains.css">
+		</head>
+		<body>
+			<script>
+			var scene = new THREE.Scene();
+		window.onload = function(){
+				
+				var aspect = window.innerWidth/ window.innerHeight;
+				var camera = new THREE.PerspectiveCamera(100, aspect, .1, 1000);
+				var renderer = Detector.webgl? new THREE.WebGLRenderer({antialias:true}): new THREE.CanvasRenderer();
+				var domEvents = new THREEx.DomEvents(camera, renderer.domElement);
+				var light = [];
+				var x_axis = new THREE.Vector3(1,0,0);
+				var y_axis = new THREE.Vector3(0,1,0);
+				var z_axis = new THREE.Vector3(0,0,1);
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+				var controls = new THREE.TrackballControls( camera,  renderer.domElement );
+				controls.enabled = true;
+				var windowResize = THREEx.WindowResize(renderer, camera);
+				camera.position.z = 20;
+				camera.position.y = 6;
+				var gui = new dat.GUI();
+				var time = new Date().getTime();
+				var g = -9.8;
+				var pm={
+					trad:.06, //track radius
+					tcurve:10, //track curvature
+					tlen:20, //track length
+					twidth:.5 //track seperation
+				}
+				
+				var c1params={
+					color:"blue",
+					m:5.0, //kg
+					v:-0.5, //m/s
+					vx:0,
+					p:-2.5,
+					k:1.25,
+					u:0.5,
+					x:7.5
+				}
+				
+				var c2params={
+					color:"red",
+					m:5.5, //kg
+					v:0.5, //m/s
+					p: 2.5,
+					k:1.25,
+					u:0.5,
+					x:-7.5
+				}
+				
+				var guiParams = {
+					orbitControls:false,
+					resetControls: function(){
+						controls.reset();
+						camera.position.z = 5;
+						camera.position.y = 2;
+					},
+					animate: false,
+					totP: 1.26,
+					elasticity: "Perfectly Inelastic"
+				}
+				
+				var camFolder = gui.addFolder('Camera');
+					var camControls = camFolder.add(guiParams, 'orbitControls').name("Toggle Controls");
+					camFolder.add(guiParams, 'resetControls').name("Reset Camera");
+				var c1Folder = gui.addFolder(c1params.color+ " Train");
+					var c1m = c1Folder.add(c1params,'m', 0,10).step(.1).name("Mass [kg]");
+					var c1v = c1Folder.add(c1params, 'v', -10,10).step(.1).name("V [m/s]").listen();
+					var c1p = c1Folder.add(c1params, 'p').name("P [kg*m/s]").listen();
+					var c1x = c1Folder.add(c1params, 'x',-( pm.tlen/2 + pm.tcurve-.4), pm.tlen/2 + pm.tcurve-.4).name("Position [m]").step(.01).listen();
+				//	var c1k = c1Folder.add(c1params, 'k').name("K [J]").listen();
+				//	var c1u = c1Folder.add(c1params, 'u').name("U [J]").listen();
+				var c2Folder = gui.addFolder(c2params.color + " Train");
+					var c2m = c2Folder.add(c2params,'m', 0,10).step(.1).name("Mass [kg]");
+					var c2v = c2Folder.add(c2params, 'v', -10,10).step(.1).name("V [m/s]").listen();
+					var c2p = c2Folder.add(c2params, 'p').name("P [kg*m/s]").listen();
+					var c2x = c2Folder.add(c2params, 'x', -( pm.tlen/2 + pm.tcurve-.4), pm.tlen/2 + pm.tcurve-.4).name("Position [m]").step(.01).listen();
+				//	var c2k = c2Folder.add(c2params, 'k').name("K [J]").listen();
+				//	var c2u = c2Folder.add(c2params, 'u').name("U [J]").listen();
+				var anFolder = gui.addFolder('Animation');
+					var an = anFolder.add(guiParams,'animate').name("Animate");
+					anFolder.add(guiParams, 'elasticity',["Perfectly Inelastic", "Elastic"]).name("Elasticity")
+				var totP = gui.add(guiParams, 'totP').name("Total Mom").listen();
+				c1params.v= c2params.v = c1params.p = c2params.p = 0;
+				guiParams.totP = c1params.p + c2params.p;
+				
+				
+				light.push(new THREE.PointLight( 0xffffff, .5, 100 ));
+				light[0].position.set( 0,10,-50 );
+				light.push(new THREE.PointLight( 0xffffff, 1, 100 ));
+			//	light[1].position.set(0,10,50);
+				light.push(new THREE.PointLight( 0xffffff, 3, 100 ));
+				light[2].position.set(25,25,25);
+				light.push(new THREE.PointLight( 0xffffff, .5, 100));
+				light[3].position.set(-50,10,0);
+			//	scene.add(light[0], light[2], light[1] );
+				scene.add(light[0],light[2],light[3]);
+							
+				controls.rotateSpeed = 1.0;
+				controls.zoomSpeed = 1.2;
+				controls.panSpeed = 0.8;
+				controls.noZoom = false;
+				controls.noPan = false;
+				controls.staticMoving = false;
+				controls.dynamicDampingFactor = 0.3;
+				
+				var axisHelper = new THREE.AxisHelper(200);
+			//	scene.add(axisHelper);
+				makeEnvironment();
+				var track = createTrack();
+				var train1= createTrain(1);
+				var train2 = createTrain(2);
+				trainMoveTo(train1, c1params.x, true);
+				trainMoveTo(train2, c2params.x, true);
+				//trainMoveTo(train1, 0, true);
+			//	trainMoveTo(train2, 0, true);
+				train2.rotation.y = Math.PI;
+				scene.add(track, train1, train2);
+				initializeListeners();
+				render();
+				
+				
+				/*******FUNCTIONS**************/
+				
+				function makeEnvironment(){
+					var environment = new THREE.Object3D();
+					var skyGeom = new THREE.BoxGeometry(50,100,75,1,1,1);
+					var skyMaterial = new THREE.MeshBasicMaterial({
+						color:0x87CEFF,
+						side:THREE.DoubleSide,
+						shading:THREE.FlatShading
+					});
+					var sky = new THREE.Mesh(skyGeom, skyMaterial);
+					var groundGeom = new THREE.BoxGeometry(48,48,73,1,1,1);
+					var groundMaterial = new THREE.MeshLambertMaterial({
+						color:0x003311,
+						side:THREE.DoubleSide,
+						//shading:THREE.FlatShading,
+						emissive: 0x001e0a
+					});
+					var ground = new THREE.Mesh(groundGeom.translate(0,-24,0),groundMaterial);
+					environment.add(sky, ground);
+					scene.add(environment);
+				}
+				
+				function createTrack(){
+					var trackGeom = new THREE.Geometry();
+					var straightGeom = new THREE.CylinderGeometry(pm.trad,pm.trad,pm.tlen,25,5);
+					var curvedGeom = new THREE.TorusGeometry(pm.tcurve,pm.trad, 25,50,Math.PI/2 );
+					
+					curvedGeom.rotateZ(-Math.PI/2);
+					curvedGeom.translate(pm.tlen/2,pm.tcurve,0);
+					straightGeom.rotateZ(Math.PI/2);
+					
+					trackGeom.merge(straightGeom.translate(0,0,pm.twidth/2));
+					trackGeom.merge(straightGeom.translate(0,0,-pm.twidth));
+					trackGeom.merge(curvedGeom.translate(0,0,pm.twidth/2));
+					trackGeom.merge(curvedGeom.translate(0,0,-pm.twidth));
+					
+					curvedGeom.translate(-pm.tlen/2,-pm.tcurve,0);
+					curvedGeom.rotateZ(1.5*Math.PI);
+					curvedGeom.translate(-pm.tlen/2,pm.tcurve,0);
+					trackGeom.merge(curvedGeom);
+					trackGeom.merge(curvedGeom.translate(0,0,pm.twidth));
+					
+					straightGeom.scale(2/pm.tlen,1,1);
+					straightGeom.rotateZ(Math.PI/2);
+					straightGeom.translate(pm.tlen/2 + pm.tcurve, pm.tcurve+ 1,0);
+					trackGeom.merge(straightGeom);
+					trackGeom.merge(straightGeom.translate(0,0,pm.twidth));
+					trackGeom.merge(straightGeom.translate( -pm.tlen - 2*pm.tcurve,0,0));
+					trackGeom.merge(straightGeom.translate(0,0,-pm.twidth));
+		
+					var trackMaterial = new THREE.MeshPhongMaterial({
+						color:0x070d12,
+						emissive:0x58626f,
+						shininess:10
+					});
+					
+					var track = new THREE.Object3D();
+					track.add(new THREE.Mesh(trackGeom, trackMaterial));
+					return track;
+				
+				}
+				
+				function createTrain(num){
+					var par = eval("c" + num+ "params");
+					var baseGeom = new THREE.CylinderGeometry(pm.twidth/2,pm.twidth/2,.6,15,5);
+					var cabGeom = new THREE.BoxGeometry(.4, .7, pm.twidth, 2, 2,2);
+					var stackGeom = new THREE.CylinderGeometry(.125,.0625,.35,15,5);
+					var cabCapGeom = new THREE.BoxGeometry(.45,.05, pm.twidth+.05, 2,2,2);
+					var wheelGeom = new THREE.CylinderGeometry(.125, .06, pm.trad, 15,5);
+					var wGeom = new THREE.Geometry();
+					baseGeom.rotateZ(Math.PI/2);
+					baseGeom.merge(cabGeom.translate(.5, .08, 0));
+					//baseGeom.merge(cabGeom.translate(.7, .08, 0));
+					stackGeom.translate(-.15, .35, 0);
+					//stackGeom.translate(.05, .35, 0);
+					var stackMat = new THREE.MeshPhongMaterial({color: 0x000000});
+					var baseMaterial = new THREE.MeshPhongMaterial({
+						color: par.color
+					});
+					
+					wheelGeom.rotateX(Math.PI/2);
+					wheelGeom.translate(0,0,pm.trad/2);
+					//wheelGeom.translate(.2,0,pm.trad/2);
+					wheelGeom.merge(new THREE.CylinderGeometry(.125, .06, pm.trad, 15,5).rotateX(-Math.PI/2).translate(0,0,-pm.trad/2));
+		
+					wGeom.merge(wheelGeom.translate(-.2,-pm.twidth/2,pm.twidth/2));
+					wGeom.merge(wheelGeom.translate(0, 0, -pm.twidth));
+					wheelGeom.scale(1.5,1.5,1);
+					wGeom.merge(wheelGeom.translate(.8, .18,0));
+					wGeom.merge(wheelGeom.translate(0,0,pm.twidth));
+					
+					var train = new THREE.Object3D();
+					train.add(new THREE.Mesh(baseGeom.translate(-.2,0,0), baseMaterial) );
+					train.add(new THREE.Mesh(cabCapGeom.translate(.3,.45,0), new THREE.MeshPhongMaterial({
+						color: 0xffff00
+					})));
+					train.add(new THREE.Mesh(stackGeom.translate(-.2,0,0), stackMat ));
+					train.add(new THREE.Mesh(wGeom.translate(-.2,0,0), stackMat));
+					
+				//	var planeGeom = new THREE.BoxGeometry(.01,1,1,1,1,1);
+				//	train.add(new THREE.Mesh(planeGeom, baseMaterial) );
+					
+					train.position.set(0,.40,0);
+					return train; 
+				}
+				
+				function trainMoveTo(trn, x, drag){
+					trn.position.x =x;
+					trn.oldy = trn.position.y;
+					var temp = pm.tlen/2 + pm.tcurve-.4;
+					if(trn.position.x< temp ){
+						if(trn.position.x <-temp){
+							trn.position.x = -temp;
+							/*trn.position.y = -Math.sqrt(Math.abs((pm.tcurve-.4)*(pm.tcurve-.4)
+												-(trn.position.x+pm.tlen/2)*(trn.position.x+pm.tlen/2)))
+												+ pm.tcurve;
+							*/
+							
+						}
+						else if(trn.position.x <-pm.tlen/2){
+							trn.position.y = -Math.sqrt(Math.abs((pm.tcurve-.4)*(pm.tcurve-.4)
+												-(trn.position.x+pm.tlen/2)*(trn.position.x+pm.tlen/2)))
+												+ pm.tcurve;
+						}
+						else if(trn.position.x <pm.tlen/2){
+							trn.position.y = .4;
+						}
+						else{
+							trn.position.y = -Math.sqrt(Math.abs((pm.tcurve-.4)*(pm.tcurve-.4)
+												-(trn.position.x-pm.tlen/2)*(trn.position.x-pm.tlen/2)))
+												+ pm.tcurve;
+						}
+					}
+					else{
+						trn.position.x = temp;
+						/*trn.position.y = -Math.sqrt(Math.abs((pm.tcurve-.4)*(pm.tcurve-.4)
+												-(trn.position.x-pm.tlen/2)*(trn.position.x-pm.tlen/2)))
+											+ pm.tcurve;
+						*/
+						
+					}
+					var theta = Math.atan2((trn.position.x-pm.tlen/2)/Math.sqrt(Math.abs((pm.tcurve-.4)*(pm.tcurve-.4)
+												-(trn.position.x-pm.tlen/2)*(trn.position.x-pm.tlen/2))),1);
+					if(trn.position.x >pm.tlen/2){
+						trn.rotation.z = -(Math.sign(trn.rotation.y) || -1)*Math.atan2((trn.position.x-pm.tlen/2)/Math.sqrt(Math.abs((pm.tcurve-.4)*(pm.tcurve-.4)
+												-(trn.position.x-pm.tlen/2)*(trn.position.x-pm.tlen/2))),1);
+					}
+					else if(trn.position.x < -pm.tlen/2 ){
+						trn.rotation.z = -(Math.sign(trn.rotation.y) || -1)*Math.atan2((trn.position.x+pm.tlen/2)/Math.sqrt(Math.abs((pm.tcurve-.4)*(pm.tcurve-.4)
+												-(trn.position.x+pm.tlen/2)*(trn.position.x+pm.tlen/2))),1);
+					}
+					else{
+						/*if(drag){
+							if(trn.position.x<0){trn.rotation.y = Math.PI;}
+							else{trn.rotation.y = 0;}
+						}*/
+						trn.rotation.z = 0;
+					}
+					
+				}
+				/*t1 running into t2*/
+				function checkIntersect(t1,t2){
+					var distance = Math.sqrt( (t1.position.x-t2.position.x)*(t1.position.x-t2.position.x)
+											+(t1.position.y-t2.position.y)*(t1.position.y-t2.position.y) );
+					//console.log(distance);
+					if(distance <= 1){
+						//console.log(distance);
+						collision(train1,train2);
+					} 
+				}
+				
+				function collision(t1,t2){
+					var a = c1params, b= c2params;
+					var vap, vbp;
+					
+					//For arbitrary elasticity, alpha;
+					/*vap = (a.m*a.v + b.m*b.v + alpha*b.m*(b.v-a.v))/(a.m+b.m);
+					vbp = (alpha*a.m*(a.v-b.v)+ a.m*a.v + b.m*b.v  )/(a.m+b.m);
+					*/
+					if(guiParams.elasticity == "Elastic"){
+						vap = (a.v*(a.m-b.m)+2*b.m*b.v)/(b.m+a.m);
+						vbp = (b.v*(b.m-a.m)+2*a.m*a.v)/(b.m+a.m);
+					}
+					else{
+						vap = vbp = (a.m*a.v + b.m*b.v)/(a.m+b.m);
+					}
+					a.v = vap;
+					b.v = vbp;
+					trainMoveTo(t2, t1.position.x-1, false);
+				//	console.log("collision");
+					
+				}
+				
+				function updateScenerio(){
+					var d = new Date().getTime();
+					var elaps = (d-time)/1000;
+					var  c1p = c1params, c2p= c2params;
+					/*var vap = Math.sqrt(a.v*a.v+2*g*(train1.position.y - train1.oldy));
+					var vbp = Math.sqrt(b.v*b.v+2*g*(train2.position.y - train2.oldy));
+					console.log(Math.cos(train1.rotation.z), train1.position.x - (1 || Math.sign(train2.rotation.y))*vap*elaps*Math.cos(train1.rotation.z) );
+					trainMoveTo(train1, train1.position.x - (1 || Math.sign(train2.rotation.y))*vap*elaps*Math.cos(train1.rotation.z) ,false);
+					//trainMoveTo(train2, train2.position.x + vbp*elaps*Math.cos(train2.rotation.z) ,false);
+					//checkIntersect(train1, train2);
+					a.v = vap;
+					a.p = a.v*a.m;
+					b.p = b.v*b.m;
+					*/
+					var c1ax = Math.sin(train1.rotation.z)*g*Math.cos(train1.rotation.z)/(c1p.m);
+					c1p.v += c1ax*elaps;
+					trainMoveTo(train1, train1.position.x + c1p.v * elaps, false);
+				
+					
+					var c2ax = -Math.sin(train2.rotation.z)*g*Math.cos(train2.rotation.z)/(c2p.m);
+					c2p.v += c2ax*elaps;
+					trainMoveTo(train2, train2.position.x + c2p.v * elaps, false);
+					
+					c1p.x = train1.position.x;
+					c2p.x = train2.position.x;
+					c2p.p = c2p.v*c2p.m;
+					c1p.p = c1p.v*c1p.m;
+					
+				/*	trainMoveTo(train1, train1.position.x + c1p.vx*elaps, false);
+					
+					var vap = Math.sqrt(c1p.v*c1p.v - 2*g*(train1.position.y-train1.oldy));
+					c1p.vx = -Math.sign(train1.position.x)*vap*Math.cos(train1.rotation.z);
+					c1p.v = vap;
+					console.log(vap,-Math.sign(train1.position.x)*Math.cos(train1.rotation.z));
+					*/
+					//console.log(c1ax,c2ax);
+					//console.log(c2ax);
+					checkIntersect(train1,train2);
+					
+					time =d;
+					//console.log("t1", train1.rotation.z);
+					//console.log("t2", train2.rotation.z);
+				}
+				
+				function initializeListeners(){
+					camControls.onChange(function(value){
+						controls.enabled = value;
+					});
+					
+					c1x.onChange(function(value){
+						trainMoveTo(train1,value, true);
+						//console.log("test");
+						checkIntersect(train1,train2);
+					});
+					
+					c2x.onChange(function(value){
+						trainMoveTo(train2,value, true);
+						checkIntersect(train2,train1);
+					});
+					
+					an.onChange(function(value){
+						if(value){
+							time = new Date().getTime();
+						}
+					});
+				}
+				
+				function render(){
+					requestAnimationFrame(render);
+					controls.update();
+					guiParams.totP = c1params.p+c2params.p;
+					if(guiParams.animate){
+						updateScenerio();
+					}
+					renderer.render( scene, camera);
+					
+				};
+				
+			}	
+			</script>
+		</body>
+	</html>
